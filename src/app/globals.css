@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+html,
+body {
+  background-color: #09090b;
+  color-scheme: dark;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(161, 161, 170, 0.25);
+  border-radius: 9999px;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+}
+
+@import "tailwindcss";
+
+html,
+body {
+  background-color: #090a0f;
+  color-scheme: dark;
+  height: 100%;
+  overscroll-behavior-y: none; /* Disabilita il pull-to-refresh nativo del browser */
+  -webkit-touch-callout: none;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
