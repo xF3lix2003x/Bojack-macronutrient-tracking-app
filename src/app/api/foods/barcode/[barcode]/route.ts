@@ -1,70 +1,99 @@
-import { randomUUID } from "crypto";
+import { NextResponse } from "next/server";
+import { ITALIAN_STAPLE_FOODS } from "@/lib/food/italianBaseFoods";
+import { MOCK_BARCODE_CATALOG } from "@/lib/food/mockCatalog";
 import type { FoodItem } from "@/lib/food/schemas";
 
 export const dynamic = "force-dynamic";
 
-type RouteParams = { params: Promise<{ barcode: string }> };
-
-interface OpenFoodFactsNutriments {
-  "energy-kcal_100g"?: number;
-  "energy-kcal"?: number;
-  proteins_100g?: number;
-  carbohydrates_100g?: number;
-  fat_100g?: number;
-}
-
 interface OpenFoodFactsProduct {
-  code?: string;
   product_name?: string;
-  product_name_it?: string;
   brands?: string;
+  code?: string;
+  nutriments?: {
+    "energy-kcal_100g"?: number;
+    "energy-kcal"?: number;
+    proteins_100g?: number;
+    carbohydrates_100g?: number;
+    fat_100g?: number;
+  };
   serving_size?: string;
-  nutriments?: OpenFoodFactsNutriments;
+  serving_quantity?: number;
 }
 
-function parseServingAmount(servingSizeStr?: string): number {
-  if (!servingSizeStr) return 100;
-  const match = servingSizeStr.match(/(\d+(?:[.,]\d+)?)/);
-  if (match) {
-    const val = parseFloat(match[1].replace(",", "."));
-    return Number.isFinite(val) && val > 0 ? val : 100;
-  }
-  return 100;
+interface OpenFoodFactsResponse {
+  status: number;
+  product?: OpenFoodFactsProduct;
 }
 
-export async function GET(_request: Request, { params }: RouteParams) {
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ barcode: string }> }
+) {
   const { barcode } = await params;
-  const cleanBarcode = barcode.trim();
 
+  // 1. Cerca prima nel catalogo mock locale
+  const foundMock = MOCK_BARCODE_CATALOG.find((f) => f.barcode === barcode);
+  if (foundMock) {
+    return NextResponse.json({ food: foundMock });
+  }
+
+  const foundStaple = ITALIAN_STAPLE_FOODS.find((f) => f.barcode === barcode);
+  if (foundStaple) {
+    return NextResponse.json({ food: foundStaple });
+  }
+
+  // 2. Interroga le API pubbliche di Open Food Facts
   try {
-    const offUrl = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(cleanBarcode)}.json`;
-    const res = await fetch(offUrl, {
+    const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`, {
       headers: {
-        "User-Agent": "MacroTrackApp/1.0 (NextJS Calorie Tracker)",
+        "User-Agent": "MacroTrackApp/1.0 (Educational Project)",
       },
+      next: { revalidate: 86400 }, // Cache di 24 ore
     });
 
-    if (!res.ok) {
-      return Response.json(
-        { error: "Errore durante la chiamata a Open Food Facts", barcode: cleanBarcode },
-        { status: 502 },
-      );
+    if (!response.ok) {
+      throw new Error("Errore di connessione a Open Food Facts");
     }
 
-    const data = await res.json();
+    const data = (await response.json()) as OpenFoodFactsResponse;
 
-    if (data.status !== 1 || !data.product) {
-      return Response.json(
-        { error: "Prodotto non trovato su Open Food Facts", barcode: cleanBarcode },
-        { status: 404 },
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      const nutriments = p.nutriments ?? {};
+
+      const calories = Math.round(
+        nutriments["energy-kcal_100g"] ?? nutriments["energy-kcal"] ?? 0
       );
+      const protein = Number((nutriments.proteins_100g ?? 0).toFixed(1));
+      const carbs = Number((nutriments.carbohydrates_100g ?? 0).toFixed(1));
+      const fat = Number((nutriments.fat_100g ?? 0).toFixed(1));
+
+      const foodItem: FoodItem = {
+        id: `off-${barcode}`,
+        name: p.product_name || `Prodotto ${barcode}`,
+        brand: p.brands || "Open Food Facts",
+        barcode: barcode,
+        macrosPer100g: {
+          calories,
+          protein,
+          carbs,
+          fat,
+        },
+        defaultServing: {
+          unit: "g",
+          amount: p.serving_quantity || 100,
+        },
+        isCustom: false,
+      };
+
+      return NextResponse.json({ food: foodItem });
     }
+  } catch {
+    // Fallback in caso di errore di rete
+  }
 
-    const p: OpenFoodFactsProduct = data.product;
-    const nutriments = p.nutriments || {};
-
-    const name = p.product_name_it || p.product_name || "Prodotto sconosciuto";
-    const brand = p.brands ? p.brands.split(",")[0].trim() : undefined;
-    const calories = Math.round(nutriments["energy-kcal_100g"] ?? nutriments["energy-kcal"] ?? 0);
-    const protein = Number((nutriments.proteins_100g ?? 0).toFixed(1));
-    const carbs = Number((nutriments.carbohydrates_10
+  return NextResponse.json(
+    { error: "Alimento non trovato tramite codice a barre" },
+    { status: 404 }
+  );
+}
