@@ -5,7 +5,7 @@ import { mealEntryRowToMealEntry } from "@/lib/food/mappers";
 import { LogMealItemInputSchema } from "@/lib/food/schemas";
 import { desc } from "drizzle-orm";
 
-export const dynamic = "force-dynamic";
+// // dynamic rimosso
 
 export async function GET() {
   const rows = await db
@@ -33,10 +33,10 @@ export async function POST(request: Request) {
     .insert(mealEntriesTable)
     .values({
       id: randomUUID(),
-      foodId: input.foodItem.isCustom || input.foodItem.id ? input.foodItem.id : null,
-      foodItem: input.foodItem,
-      loggedServingUnit: input.loggedServing.unit,
-      loggedServingAmount: input.loggedServing.amount,
+    foodId: input.foodItem?.isCustom || input.foodItem?.id ? input.foodItem.id : null,
+foodItem: input.foodItem,
+loggedServingUnit: input.loggedServing?.unit ?? "g",
+loggedServingAmount: input.loggedServing?.amount ?? 100,
       mealType: input.mealType,
       loggedAt,
     })

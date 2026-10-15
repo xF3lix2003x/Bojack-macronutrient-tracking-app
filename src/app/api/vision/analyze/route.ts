@@ -1,7 +1,7 @@
 import { hashStringToIndex, MOCK_VISION_POOL } from "@/lib/food/mockCatalog";
 import { z } from "zod";
 
-export const dynamic = "force-dynamic";
+// dynamic rimosso
 
 const VisionAnalyzeRequestSchema = z.object({
   imageBase64: z.string().min(50, "Image payload looks too small to analyze"),

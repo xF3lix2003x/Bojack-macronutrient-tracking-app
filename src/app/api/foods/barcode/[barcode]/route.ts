@@ -31,7 +31,6 @@ export async function GET(
 ) {
   const { barcode } = await params;
 
-  // 1. Cerca prima nel catalogo mock locale
   const foundMock = MOCK_BARCODE_CATALOG.find((f) => f.barcode === barcode);
   if (foundMock) {
     return NextResponse.json({ food: foundMock });
@@ -42,17 +41,16 @@ export async function GET(
     return NextResponse.json({ food: foundStaple });
   }
 
-  // 2. Interroga le API pubbliche di Open Food Facts
   try {
     const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`, {
       headers: {
         "User-Agent": "MacroTrackApp/1.0 (Educational Project)",
       },
-      next: { revalidate: 86400 }, // Cache di 24 ore
+      next: { revalidate: 86400 },
     });
 
     if (!response.ok) {
-      throw new Error("Errore di connessione a Open Food Facts");
+      throw new Error("Errore Open Food Facts");
     }
 
     const data = (await response.json()) as OpenFoodFactsResponse;
@@ -93,7 +91,7 @@ export async function GET(
   }
 
   return NextResponse.json(
-    { error: "Alimento non trovato tramite codice a barre" },
+    { error: "Alimento non trovato" },
     { status: 404 }
   );
 }

@@ -1,32 +1,41 @@
+import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { dailyTargetsTable } from "@/db/schema";
 import { DailyTargetSchema } from "@/lib/food/schemas";
-import { eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 
-export const dynamic = "force-dynamic";
+// dynamic rimosso
 
-const DEFAULT_TARGET_ID = "default";
-const FALLBACK_TARGET = { calories: 2200, protein: 150, carbs: 220, fat: 70 } as const;
+const DEFAULT_TARGET = {
+  calories: 2400,
+  protein: 150,
+  carbs: 250,
+  fat: 75,
+};
 
 export async function GET() {
-  const [row] = await db
-    .select()
-    .from(dailyTargetsTable)
-    .where(eq(dailyTargetsTable.id, DEFAULT_TARGET_ID))
-    .limit(1);
+  try {
+    const [latest] = await db
+      .select()
+      .from(dailyTargetsTable)
+      .orderBy(desc(dailyTargetsTable.updatedAt))
+      .limit(1);
 
-  if (!row) {
-    return Response.json({ target: FALLBACK_TARGET });
+    if (latest) {
+      return NextResponse.json({
+        target: {
+          calories: Math.round(latest.calories),
+          protein: Math.round(latest.protein),
+          carbs: Math.round(latest.carbs),
+          fat: Math.round(latest.fat),
+        },
+      });
+    }
+  } catch {
+    // Fallback silenzioso
   }
 
-  return Response.json({
-    target: {
-      calories: row.calories,
-      protein: row.protein,
-      carbs: row.carbs,
-      fat: row.fat,
-    },
-  });
+  return NextResponse.json({ target: DEFAULT_TARGET });
 }
 
 export async function PUT(request: Request) {
@@ -34,24 +43,27 @@ export async function PUT(request: Request) {
   const parsed = DailyTargetSchema.safeParse(body);
 
   if (!parsed.success) {
-    return Response.json(
-      { error: "Invalid daily target payload", issues: parsed.error.flatten() },
-      { status: 400 },
+    return NextResponse.json(
+      { error: "Target non valido", issues: parsed.error.flatten() },
+      { status: 400 }
     );
   }
 
-  const target = parsed.data;
+  try {
+    const [inserted] = await db
+      .insert(dailyTargetsTable)
+      .values(parsed.data)
+      .returning();
 
-  const [row] = await db
-    .insert(dailyTargetsTable)
-    .values({ id: DEFAULT_TARGET_ID, ...target, updatedAt: new Date() })
-    .onConflictDoUpdate({
-      target: dailyTargetsTable.id,
-      set: { ...target, updatedAt: new Date() },
-    })
-    .returning();
-
-  return Response.json({
-    target: { calories: row.calories, protein: row.protein, carbs: row.carbs, fat: row.fat },
-  });
+    return NextResponse.json({
+      target: {
+        calories: Math.round(inserted.calories),
+        protein: Math.round(inserted.protein),
+        carbs: Math.round(inserted.carbs),
+        fat: Math.round(inserted.fat),
+      },
+    });
+  } catch {
+    return NextResponse.json({ target: parsed.data });
+  }
 }

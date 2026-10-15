@@ -1,250 +1,247 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, PlusCircle } from "lucide-react";
-import type { z } from "zod";
-import { Modal } from "@/components/ui/Modal";
-import { MacroBadge } from "@/components/ui/MacroBadge";
-import { CreateCustomFoodInputSchema, type CreateCustomFoodInput } from "@/lib/food/schemas";
-import { scaleMacrosToGrams } from "@/lib/food/nutrition";
-import { useFoodStore } from "@/store/useFoodStore";
-import type { FoodItem } from "@/lib/food/schemas";
+import React, { useMemo, useState, useEffect } from "react";
+import type { CreateCustomFoodInput, FoodItem, ServingUnit } from "@/lib/food/schemas";
+import { X, PlusCircle } from "lucide-react";
 
-type CustomFoodFormValues = z.input<typeof CreateCustomFoodInputSchema>;
-
-interface CustomFoodCreatorModalProps {
+export interface CustomFoodCreatorModalProps {
+  isOpen?: boolean;
+  open?: boolean;
   onClose: () => void;
-  onCreated: (food: FoodItem) => void;
+  onCreated?: (food: FoodItem) => void;
+  onCreate?: (food: FoodItem) => void;
+  onSave?: (food: FoodItem) => void;
+  onSubmitFood?: (food: FoodItem) => void;
   initialBarcode?: string;
+  defaultBarcode?: string;
+  barcode?: string;
   initialName?: string;
+  defaultName?: string;
+  [key: string]: unknown;
 }
 
-const FORM_DEFAULTS: CreateCustomFoodInput = {
-  name: "",
-  brand: undefined,
-  barcode: undefined,
-  servingUnit: "g",
-  servingAmount: 100,
-  caloriesPer100g: 0,
-  proteinPer100g: 0,
-  carbsPer100g: 0,
-  fatPer100g: 0,
-};
-
 export function CustomFoodCreatorModal({
+  isOpen,
+  open,
   onClose,
   onCreated,
+  onCreate,
+  onSave,
+  onSubmitFood,
   initialBarcode,
+  defaultBarcode,
+  barcode,
   initialName,
+  defaultName,
 }: CustomFoodCreatorModalProps) {
-  const createCustomFood = useFoodStore((state) => state.createCustomFood);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const isModalOpen = isOpen ?? open ?? true;
+  const resolvedBarcode = initialBarcode ?? defaultBarcode ?? barcode ?? undefined;
+  const resolvedName = initialName ?? defaultName ?? "";
 
-  const {
-    register,
-    handleSubmit,
-    watch,
-    formState: { errors, isSubmitting },
-  } = useForm<CustomFoodFormValues>({
-    resolver: zodResolver(CreateCustomFoodInputSchema),
-    defaultValues: {
-      ...FORM_DEFAULTS,
-      barcode: initialBarcode,
-      name: initialName ?? "",
-    },
+  const [watched, setWatched] = useState<CreateCustomFoodInput>({
+    name: resolvedName,
+    brand: undefined,
+    barcode: resolvedBarcode,
+    servingUnit: "g",
+    servingAmount: 100,
+    caloriesPer100g: 0,
+    proteinPer100g: 0,
+    carbsPer100g: 0,
+    fatPer100g: 0,
   });
 
-  const watched = watch();
+  useEffect(() => {
+    setWatched((prev) => ({
+      ...prev,
+      name: resolvedName || prev.name,
+      barcode: resolvedBarcode ?? prev.barcode,
+    }));
+  }, [resolvedBarcode, resolvedName]);
 
   const previewGrams = useMemo(() => {
-    if (watched.servingUnit === "portion") return 100;
-    return Number.isFinite(watched.servingAmount) ? watched.servingAmount : 0;
+    if ((watched.servingUnit as string) === "portion") return 100;
+    return Number.isFinite(watched.servingAmount) ? Number(watched.servingAmount) : 0;
   }, [watched.servingUnit, watched.servingAmount]);
 
-  const previewMacros = useMemo(
-    () =>
-      scaleMacrosToGrams(
-        {
-          calories: Number(watched.caloriesPer100g) || 0,
-          protein: Number(watched.proteinPer100g) || 0,
-          carbs: Number(watched.carbsPer100g) || 0,
-          fat: Number(watched.fatPer100g) || 0,
-        },
-        previewGrams,
-      ),
-    [watched.caloriesPer100g, watched.proteinPer100g, watched.carbsPer100g, watched.fatPer100g, previewGrams],
-  );
+  if (!isModalOpen) return null;
 
-  const onSubmit = async (values: CustomFoodFormValues) => {
-    setSubmitError(null);
-    try {
-      const input: CreateCustomFoodInput = CreateCustomFoodInputSchema.parse(values);
-      const food = await createCustomFood(input);
-      onCreated(food);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to create custom food");
-    }
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!watched.name.trim()) return;
+
+    const newFood: FoodItem = {
+      id: `custom-${Date.now()}`,
+      name: watched.name.trim(),
+      brand: watched.brand?.trim() || undefined,
+      barcode: watched.barcode?.trim() || undefined,
+      macrosPer100g: {
+        calories: Number(watched.caloriesPer100g) || 0,
+        protein: Number(watched.proteinPer100g) || 0,
+        carbs: Number(watched.carbsPer100g) || 0,
+        fat: Number(watched.fatPer100g) || 0,
+      },
+      defaultServing: {
+        unit: watched.servingUnit as ServingUnit,
+        amount: Number(watched.servingAmount) || 100,
+      },
+      isCustom: true,
+    };
+
+    onCreated?.(newFood);
+    onCreate?.(newFood);
+    onSave?.(newFood);
+    onSubmitFood?.(newFood);
+    onClose();
   };
 
   const inputClass =
-    "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30";
-  const labelClass = "mb-1.5 block text-xs font-medium uppercase tracking-wide text-zinc-500";
-  const errorClass = "mt-1 text-xs text-rose-400";
+    "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none focus:border-emerald-500";
 
   return (
-    <Modal
-      title="Create Custom Food"
-      subtitle="Define nutrition values per 100g — we'll calculate the rest"
-      onClose={onClose}
-    >
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className={labelClass} htmlFor="name">
-              Food name
-            </label>
-            <input id="name" className={inputClass} placeholder="e.g. Homemade Protein Pancakes" {...register("name")} />
-            {errors.name && <p className={errorClass}>{errors.name.message}</p>}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0B0D13] p-6 text-slate-100 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <PlusCircle size={18} className="text-emerald-400" />
+            <h3 className="text-base font-bold text-white">Crea Alimento Personalizzato</h3>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-1.5 text-slate-400 hover:bg-white/5 hover:text-white"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
+        <form onSubmit={handleSubmit} className="space-y-3 text-xs">
           <div>
-            <label className={labelClass} htmlFor="brand">
-              Brand (optional)
-            </label>
-            <input id="brand" className={inputClass} placeholder="e.g. Home Kitchen" {...register("brand")} />
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="barcode">
-              Barcode (optional)
-            </label>
-            <input id="barcode" className={inputClass} placeholder="e.g. 5901234123457" {...register("barcode")} />
-            {errors.barcode && <p className={errorClass}>{errors.barcode.message}</p>}
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="servingUnit">
-              Serving unit
-            </label>
-            <select id="servingUnit" className={inputClass} {...register("servingUnit")}>
-              <option value="g">Grams (g)</option>
-              <option value="ml">Milliliters (ml)</option>
-              <option value="portion">Portion</option>
-            </select>
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="servingAmount">
-              Default serving amount
-            </label>
+            <label className="mb-1 block text-slate-400">Nome alimento *</label>
             <input
-              id="servingAmount"
-              type="number"
-              step="0.1"
+              type="text"
+              required
+              value={watched.name}
+              onChange={(e) => setWatched({ ...watched, name: e.target.value })}
               className={inputClass}
-              {...register("servingAmount", { valueAsNumber: true })}
+              placeholder="Es. Petto di pollo"
             />
-            {errors.servingAmount && <p className={errorClass}>{errors.servingAmount.message}</p>}
           </div>
-        </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Nutrition per 100{watched.servingUnit === "ml" ? "ml" : "g"}
-          </p>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelClass} htmlFor="caloriesPer100g">
-                Calories (kcal)
-              </label>
+              <label className="mb-1 block text-slate-400">Marca</label>
               <input
-                id="caloriesPer100g"
-                type="number"
-                step="1"
+                type="text"
+                value={watched.brand ?? ""}
+                onChange={(e) => setWatched({ ...watched, brand: e.target.value || undefined })}
                 className={inputClass}
-                {...register("caloriesPer100g", { valueAsNumber: true })}
               />
-              {errors.caloriesPer100g && <p className={errorClass}>{errors.caloriesPer100g.message}</p>}
             </div>
             <div>
-              <label className={labelClass} htmlFor="proteinPer100g">
-                Protein (g)
-              </label>
+              <label className="mb-1 block text-slate-400">Barcode</label>
               <input
-                id="proteinPer100g"
-                type="number"
-                step="0.1"
+                type="text"
+                value={watched.barcode ?? ""}
+                onChange={(e) => setWatched({ ...watched, barcode: e.target.value || undefined })}
                 className={inputClass}
-                {...register("proteinPer100g", { valueAsNumber: true })}
               />
-              {errors.proteinPer100g && <p className={errorClass}>{errors.proteinPer100g.message}</p>}
-            </div>
-            <div>
-              <label className={labelClass} htmlFor="carbsPer100g">
-                Carbs (g)
-              </label>
-              <input
-                id="carbsPer100g"
-                type="number"
-                step="0.1"
-                className={inputClass}
-                {...register("carbsPer100g", { valueAsNumber: true })}
-              />
-              {errors.carbsPer100g && <p className={errorClass}>{errors.carbsPer100g.message}</p>}
-            </div>
-            <div>
-              <label className={labelClass} htmlFor="fatPer100g">
-                Fat (g)
-              </label>
-              <input
-                id="fatPer100g"
-                type="number"
-                step="0.1"
-                className={inputClass}
-                {...register("fatPer100g", { valueAsNumber: true })}
-              />
-              {errors.fatPer100g && <p className={errorClass}>{errors.fatPer100g.message}</p>}
             </div>
           </div>
-        </div>
 
-        <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sky-300">
-            Preview for {previewGrams}
-            {watched.servingUnit === "ml" ? "ml" : "g"} serving
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-sky-500/30 bg-sky-500/15 px-2.5 py-1 text-xs font-semibold text-sky-300">
-              {previewMacros.calories} kcal
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-slate-400">Porzione</label>
+              <input
+                type="number"
+                value={watched.servingAmount}
+                onChange={(e) => setWatched({ ...watched, servingAmount: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-slate-400">Unità</label>
+              <select
+                value={watched.servingUnit}
+                onChange={(e) => setWatched({ ...watched, servingUnit: e.target.value as ServingUnit })}
+                className="w-full rounded-xl border border-white/10 bg-[#12151E] px-3 py-2 text-white outline-none focus:border-emerald-500"
+              >
+                <option value="g">g</option>
+                <option value="ml">ml</option>
+                <option value="pz">pz</option>
+                <option value="portion">Porzione</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="mb-1 block text-slate-400">Calorie (per 100g)</label>
+              <input
+                type="number"
+                step="any"
+                value={watched.caloriesPer100g}
+                onChange={(e) => setWatched({ ...watched, caloriesPer100g: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-slate-400">Proteine (per 100g)</label>
+              <input
+                type="number"
+                step="any"
+                value={watched.proteinPer100g}
+                onChange={(e) => setWatched({ ...watched, proteinPer100g: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-slate-400">Carboidrati (per 100g)</label>
+              <input
+                type="number"
+                step="any"
+                value={watched.carbsPer100g}
+                onChange={(e) => setWatched({ ...watched, carbsPer100g: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-slate-400">Grassi (per 100g)</label>
+              <input
+                type="number"
+                step="any"
+                value={watched.fatPer100g}
+                onChange={(e) => setWatched({ ...watched, fatPer100g: Number(e.target.value) })}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <p className="pt-1 text-[11px] text-slate-400">
+            Anteprima porzione ({previewGrams}g):{" "}
+            <span className="font-bold text-emerald-400">
+              {Math.round(((watched.caloriesPer100g || 0) * previewGrams) / 100)} kcal
             </span>
-            <MacroBadge macro="protein" value={previewMacros.protein} />
-            <MacroBadge macro="carbs" value={previewMacros.carbs} />
-            <MacroBadge macro="fat" value={previewMacros.fat} />
-          </div>
-          {watched.servingUnit === "portion" && (
-            <p className="mt-2 text-[11px] text-zinc-500">
-              Portions are previewed as a 100g equivalent until logged.
-            </p>
-          )}
-        </div>
-
-        {submitError && (
-          <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
-            {submitError}
           </p>
-        )}
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="flex items-center justify-center gap-2 rounded-xl bg-sky-500 px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <PlusCircle size={18} />}
-          Save Custom Food
-        </button>
-      </form>
-    </Modal>
+          <div className="flex justify-end gap-2 pt-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-white/10 px-4 py-2 font-semibold text-slate-300 hover:bg-white/5"
+            >
+              Annulla
+            </button>
+            <button
+              type="submit"
+              className="rounded-xl bg-emerald-500 px-4 py-2 font-bold text-slate-950 hover:bg-emerald-400"
+            >
+              Salva Alimento
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
+
+export default CustomFoodCreatorModal;

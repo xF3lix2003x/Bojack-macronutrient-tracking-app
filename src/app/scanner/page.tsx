@@ -1,6 +1,6 @@
 import { ScannerView } from "@/components/ScannerView";
 
-export const dynamic = "force-dynamic";
+// dynamic rimosso
 
 export default function ScannerPage() {
   return <ScannerView />;

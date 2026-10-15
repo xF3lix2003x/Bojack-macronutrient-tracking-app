@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import type { FoodItem } from "@/lib/food/schemas";
 
-export const dynamic = "force-dynamic";
+// dynamic rimosso
 
 interface OpenFoodFactsNutriments {
   "energy-kcal_100g"?: number;
