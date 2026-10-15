@@ -1,9 +1,9 @@
-import type { CapacitorConfig } from '@capacitor/cli';
+import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: 'com.horse.pieceoffit',
-  appName: 'BoTrack',
-  webDir: 'public'
+  appId: "com.botrack.app",
+  appName: "BoTrack",
+  webDir: "out",
 };
 
 export default config;

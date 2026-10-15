@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Droplets, Pill, Plus, Scale } from "lucide-react";
+import { Check, Droplets, Minus, Pill, Plus, Scale, X } from "lucide-react";
 import { triggerHaptic } from "@/lib/mobileUtils";
 
 interface DailyWellnessData {
@@ -16,12 +16,26 @@ export function WellnessStrip({ dateKey }: { dateKey: string }) {
   const storageKey = `wellness-${dateKey}`;
   const [waterMl, setWaterMl] = useState(0);
   const [takenSupps, setTakenSupps] = useState<string[]>([]);
+  const [customSuppList, setCustomSuppList] =
+    useState<string[]>(DEFAULT_SUPPLEMENTS);
+  const [isAddingSupp, setIsAddingSupp] = useState(false);
+  const [newSuppName, setNewSuppName] = useState("");
   const [weightKg, setWeightKg] = useState<number>(74.0);
   const [isEditingWeight, setIsEditingWeight] = useState(false);
 
   useEffect(() => {
     try {
-      const savedWeight = localStorage.getItem("macrotrack-last-weight");
+      const savedSuppList = localStorage.getItem("botrack-custom-supps");
+      if (savedSuppList) {
+        const parsedList = JSON.parse(savedSuppList) as string[];
+        if (Array.isArray(parsedList) && parsedList.length > 0) {
+          setCustomSuppList(parsedList);
+        }
+      }
+
+      const savedWeight =
+        localStorage.getItem("botrack-last-weight") ??
+        localStorage.getItem("macrotrack-last-weight");
       if (savedWeight) setWeightKg(Number(savedWeight));
 
       const raw = localStorage.getItem(storageKey);
@@ -39,7 +53,11 @@ export function WellnessStrip({ dateKey }: { dateKey: string }) {
     }
   }, [storageKey]);
 
-  const saveState = (nextWater: number, nextSupps: string[], nextWeight: number) => {
+  const saveState = (
+    nextWater: number,
+    nextSupps: string[],
+    nextWeight: number
+  ) => {
     try {
       localStorage.setItem(
         storageKey,
@@ -49,7 +67,7 @@ export function WellnessStrip({ dateKey }: { dateKey: string }) {
           weightKg: nextWeight,
         })
       );
-      localStorage.setItem("macrotrack-last-weight", String(nextWeight));
+      localStorage.setItem("botrack-last-weight", String(nextWeight));
     } catch {
       // Ignora
     }
@@ -71,6 +89,36 @@ export function WellnessStrip({ dateKey }: { dateKey: string }) {
     saveState(waterMl, next, weightKg);
   };
 
+  const handleAddCustomSupplement = () => {
+    const clean = newSuppName.trim();
+    if (!clean) {
+      setIsAddingSupp(false);
+      return;
+    }
+    if (!customSuppList.includes(clean)) {
+      const updated = [...customSuppList, clean];
+      setCustomSuppList(updated);
+      try {
+        localStorage.setItem("botrack-custom-supps", JSON.stringify(updated));
+      } catch {
+        // Ignora
+      }
+    }
+    setNewSuppName("");
+    setIsAddingSupp(false);
+  };
+
+  const handleRemoveSuppFromList = (e: React.MouseEvent, name: string) => {
+    e.stopPropagation();
+    const updated = customSuppList.filter((s) => s !== name);
+    setCustomSuppList(updated);
+    try {
+      localStorage.setItem("botrack-custom-supps", JSON.stringify(updated));
+    } catch {
+      // Ignora
+    }
+  };
+
   const handleWeightSave = (val: number) => {
     if (Number.isFinite(val) && val > 30 && val < 250) {
       setWeightKg(val);
@@ -83,50 +131,77 @@ export function WellnessStrip({ dateKey }: { dateKey: string }) {
   const waterPercent = Math.min(100, Math.round((waterMl / waterTarget) * 100));
 
   return (
-    <div className="mt-4 flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-3">
-        {/* Card Idratazione */}
-        <div className="flex flex-col justify-between rounded-[20px] border border-white/[0.06] bg-[#12151E] p-3.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400">
-                <Droplets size={16} />
+        {/* Card Idratazione con effetto Liquid Fill */}
+        <div className="relative flex flex-col justify-between overflow-hidden rounded-3xl border border-white/[0.07] bg-[#11151F] p-4">
+          <div
+            className="pointer-events-none absolute bottom-0 left-0 right-0 bg-gradient-to-t from-sky-500/15 to-cyan-400/5 transition-all duration-500"
+            style={{ height: `${waterPercent}%` }}
+          />
+
+          <div className="relative z-10 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400">
+                <Droplets size={18} />
               </div>
               <div>
-                <span className="block text-xs font-bold text-white">Acqua</span>
-                <span className="font-display text-[11px] font-bold text-sky-400 tabular-nums">
-                  {waterMl} / {waterTarget}ml
+                <span className="block text-xs font-extrabold text-white">
+                  Acqua
+                </span>
+                <span className="font-display text-xs font-bold text-sky-400 tabular-nums">
+                  {waterMl}{" "}
+                  <span className="text-[11px] font-medium text-slate-400">
+                    / {waterTarget}ml
+                  </span>
                 </span>
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => addWater(250)}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-sky-500/30 bg-sky-500/15 text-sky-300 transition hover:bg-sky-500 hover:text-slate-950 active:scale-95"
-              title="+250ml Acqua"
-            >
-              <Plus size={15} strokeWidth={2.5} />
-            </button>
           </div>
 
-          <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-300"
-              style={{ width: `${waterPercent}%` }}
-            />
+          <div className="relative z-10 mt-3 flex items-center justify-between gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800/90">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-300"
+                style={{ width: `${waterPercent}%` }}
+              />
+            </div>
+
+            <div className="flex items-center gap-1">
+              {waterMl > 0 && (
+                <button
+                  type="button"
+                  onClick={() => addWater(-250)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-[#181D2B] text-slate-300 transition hover:text-white active:scale-95"
+                  title="-250ml"
+                >
+                  <Minus size={13} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => addWater(250)}
+                className="flex h-7 items-center gap-0.5 rounded-lg border border-sky-500/30 bg-sky-500/15 px-2 text-[11px] font-extrabold text-sky-300 transition hover:bg-sky-500 hover:text-slate-950 active:scale-95"
+                title="+250ml Acqua"
+              >
+                <Plus size={12} strokeWidth={3} />
+                <span>250</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Card Peso Corporeo */}
-        <div className="flex flex-col justify-between rounded-[20px] border border-white/[0.06] bg-[#12151E] p-3.5">
+        <div className="flex flex-col justify-between rounded-3xl border border-white/[0.07] bg-[#11151F] p-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400">
-                <Scale size={16} />
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400">
+                <Scale size={18} />
               </div>
               <div>
-                <span className="block text-xs font-bold text-white">Peso</span>
+                <span className="block text-xs font-extrabold text-white">
+                  Peso
+                </span>
                 {isEditingWeight ? (
                   <input
                     autoFocus
@@ -136,16 +211,18 @@ export function WellnessStrip({ dateKey }: { dateKey: string }) {
                     onBlur={(e) => handleWeightSave(e.target.valueAsNumber)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        handleWeightSave((e.target as HTMLInputElement).valueAsNumber);
+                        handleWeightSave(
+                          (e.target as HTMLInputElement).valueAsNumber
+                        );
                       }
                     }}
-                    className="font-display w-16 border-b border-emerald-400 bg-transparent text-sm font-bold text-white outline-none"
+                    className="font-display w-16 border-b-2 border-emerald-400 bg-transparent text-sm font-extrabold text-white outline-none"
                   />
                 ) : (
                   <button
                     type="button"
                     onClick={() => setIsEditingWeight(true)}
-                    className="font-display text-sm font-bold text-emerald-400 tabular-nums hover:underline"
+                    className="font-display text-sm font-extrabold text-emerald-400 tabular-nums hover:underline"
                   >
                     {weightKg.toFixed(1)} kg
                   </button>
@@ -156,45 +233,91 @@ export function WellnessStrip({ dateKey }: { dateKey: string }) {
             <button
               type="button"
               onClick={() => setIsEditingWeight(true)}
-              className="rounded-lg bg-[#1A1E2B] px-2 py-1 text-[10px] font-bold text-slate-300 hover:text-white"
+              className="rounded-xl border border-white/[0.06] bg-[#181D2B] px-2.5 py-1 text-[11px] font-bold text-slate-300 transition hover:text-white"
             >
-              Registra
+              Modifica
             </button>
           </div>
-          <span className="mt-2 text-[10px] font-medium text-slate-400">
-            Tocca il peso per aggiornare il diario
+          <span className="mt-3 text-[11px] font-medium text-slate-400">
+            Tocca il valore per aggiornare
           </span>
         </div>
       </div>
 
-      {/* Checklist Rapida Integratori */}
-      <div className="flex items-center justify-between gap-2 rounded-[20px] border border-white/[0.06] bg-[#12151E] px-4 py-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
-          <Pill size={15} className="text-purple-400" />
-          <span>Stack:</span>
-        </div>
+      {/* Checklist Rapida Integratori Personalizzabile */}
+      <div className="rounded-3xl border border-white/[0.07] bg-[#11151F] px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex shrink-0 items-center gap-2 text-xs font-extrabold text-slate-300">
+            <Pill size={15} className="text-purple-400" />
+            <span>Stack:</span>
+          </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          {DEFAULT_SUPPLEMENTS.map((supp) => {
-            const isTaken = takenSupps.includes(supp);
-            return (
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {customSuppList.map((supp) => {
+              const isTaken = takenSupps.includes(supp);
+              return (
+                <button
+                  key={supp}
+                  type="button"
+                  onClick={() => toggleSupplement(supp)}
+                  className={`group inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold transition ${
+                    isTaken
+                      ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+                      : "border border-white/[0.05] bg-[#181D2B] text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {isTaken && <Check size={12} strokeWidth={3} />}
+                  <span>{supp}</span>
+                  {customSuppList.length > 1 && (
+                    <span
+                      onClick={(e) => handleRemoveSuppFromList(e, supp)}
+                      className="ml-0.5 hidden rounded-full p-0.5 text-slate-500 hover:text-rose-400 group-hover:inline-flex"
+                      title="Rimuovi dallo stack"
+                    >
+                      <X size={10} />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            {isAddingSupp ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  type="text"
+                  value={newSuppName}
+                  onChange={(e) => setNewSuppName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddCustomSupplement();
+                    if (e.key === "Escape") setIsAddingSupp(false);
+                  }}
+                  placeholder="Es. Vitamina D"
+                  className="h-7 w-28 rounded-full border border-emerald-500/40 bg-[#181D2B] px-2.5 text-[11px] font-semibold text-white outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomSupplement}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-slate-950"
+                >
+                  <Check size={12} strokeWidth={3} />
+                </button>
+              </div>
+            ) : (
               <button
-                key={supp}
                 type="button"
-                onClick={() => toggleSupplement(supp)}
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
-                  isTaken
-                    ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                    : "bg-[#1A1E2B] text-slate-400 hover:text-white"
-                }`}
+                onClick={() => setIsAddingSupp(true)}
+                className="inline-flex h-7 items-center gap-1 rounded-full border border-dashed border-white/15 bg-[#181D2B]/60 px-2.5 text-[11px] font-bold text-slate-400 transition hover:border-emerald-400 hover:text-emerald-300"
+                title="Aggiungi integratore"
               >
-                {isTaken && <Check size={11} strokeWidth={3} />}
-                {supp}
+                <Plus size={11} /> Nuovo
               </button>
-            );
-          })}
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+export default WellnessStrip;

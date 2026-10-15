@@ -1,21 +1,19 @@
-import { db } from "@/db";
-import { mealEntriesTable } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import type { MealEntry } from "@/lib/food/schemas";
 
-export const dynamic = "force-dynamic";
+const globalForMeals = globalThis as unknown as {
+  __botrackMeals?: MealEntry[];
+};
 
-type RouteParams = { params: Promise<{ id: string }> };
-
-export async function DELETE(_request: Request, { params }: RouteParams) {
-  const { id } = await params;
-  const deleted = await db
-    .delete(mealEntriesTable)
-    .where(eq(mealEntriesTable.id, id))
-    .returning({ id: mealEntriesTable.id });
-
-  if (deleted.length === 0) {
-    return Response.json({ error: "Meal entry not found" }, { status: 404 });
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  if (globalForMeals.__botrackMeals) {
+    globalForMeals.__botrackMeals = globalForMeals.__botrackMeals.filter(
+      (e) => e.id !== id
+    );
   }
-
-  return Response.json({ ok: true });
+  return NextResponse.json({ ok: true, id });
 }

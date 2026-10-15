@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -10,7 +10,6 @@ import {
   Keyboard,
   Loader2,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import { useFoodVisionCapture } from "@/hooks/useFoodVisionCapture";
 import { useFoodStore } from "@/store/useFoodStore";
@@ -38,6 +37,7 @@ export function ScannerView() {
   const [isAnalyzingUpload, setIsAnalyzingUpload] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastScannedCodeRef = useRef<string | null>(null);
 
   const {
     videoRef,
@@ -58,31 +58,94 @@ export function ScannerView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleBarcodeLookup = async (codeToLookup: string) => {
-    const clean = codeToLookup.trim();
-    if (!clean) return;
+  const handleBarcodeLookup = useCallback(
+    async (codeToLookup: string) => {
+      const clean = codeToLookup.trim();
+      if (!clean || isLookingUpBarcode) return;
 
-    triggerHaptic("light");
-    setIsLookingUpBarcode(true);
-    setStatusMessage(`Ricerca codice ${clean} nei database...`);
+      triggerHaptic("light");
+      setIsLookingUpBarcode(true);
+      setStatusMessage(`Ricerca codice ${clean} nei database...`);
 
-    try {
-      const result = await findFoodByBarcode(clean);
-      if (result.status === "found") {
-        triggerHaptic("success");
-        setStatusMessage(null);
-        setDetectedFood(result.food);
-      } else if (result.status === "not_found") {
-        triggerHaptic("error");
-        setStatusMessage(null);
-        setNotFoundBarcode(clean);
-      } else {
-        setStatusMessage(result.message);
+      try {
+        const result = await findFoodByBarcode(clean);
+        if (result.status === "found") {
+          triggerHaptic("success");
+          setStatusMessage(null);
+          setDetectedFood(result.food);
+        } else if (result.status === "not_found") {
+          triggerHaptic("error");
+          setStatusMessage(null);
+          setNotFoundBarcode(clean);
+        } else {
+          setStatusMessage(result.message);
+        }
+      } finally {
+        setIsLookingUpBarcode(false);
       }
-    } finally {
-      setIsLookingUpBarcode(false);
+    },
+    [findFoodByBarcode, isLookingUpBarcode]
+  );
+
+  // Decodifica Live Automatica Barcode sul flusso video (API nativa BarcodeDetector)
+  useEffect(() => {
+    if (
+      mode !== "barcode" ||
+      !isStreaming ||
+      Boolean(detectedFood) ||
+      Boolean(notFoundBarcode) ||
+      isLookingUpBarcode
+    ) {
+      return;
     }
-  };
+
+    const BarcodeDetectorApi = (window as unknown as Record<string, any>)
+      .BarcodeDetector;
+    if (!BarcodeDetectorApi) return;
+
+    let detector: any = null;
+    try {
+      detector = new BarcodeDetectorApi({
+        formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
+      });
+    } catch {
+      return;
+    }
+
+    let isCancelled = false;
+    const interval = setInterval(async () => {
+      const videoEl = videoRef.current;
+      if (!videoEl || videoEl.readyState < 2 || isCancelled) return;
+      try {
+        const barcodes = await detector.detect(videoEl);
+        if (Array.isArray(barcodes) && barcodes.length > 0) {
+          const rawValue = String(barcodes[0]?.rawValue ?? "").trim();
+          if (rawValue && rawValue !== lastScannedCodeRef.current) {
+            lastScannedCodeRef.current = rawValue;
+            void handleBarcodeLookup(rawValue);
+            setTimeout(() => {
+              lastScannedCodeRef.current = null;
+            }, 3500);
+          }
+        }
+      } catch {
+        // Ignora frame non validi
+      }
+    }, 350);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [
+    mode,
+    isStreaming,
+    detectedFood,
+    notFoundBarcode,
+    isLookingUpBarcode,
+    videoRef,
+    handleBarcodeLookup,
+  ]);
 
   const handleVisionCapture = async () => {
     triggerHaptic("medium");
@@ -93,11 +156,15 @@ export function ScannerView() {
       setStatusMessage(null);
       setDetectedFood(result.suggestedFood);
     } else {
-      setStatusMessage("Impossibile analizzare l'immagine. Riprova o carica una foto.");
+      setStatusMessage(
+        "Impossibile analizzare l'immagine. Riprova o carica una foto."
+      );
     }
   };
 
-  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleGalleryUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -139,7 +206,10 @@ export function ScannerView() {
     if (!detectedFood) return;
     await logMealItem({
       foodItem: detectedFood,
-      loggedServing: { unit: payload.servingUnit, amount: payload.servingAmount },
+      loggedServing: {
+        unit: payload.servingUnit,
+        amount: payload.servingAmount,
+      },
       mealType: payload.mealType,
     });
     setDetectedFood(null);
@@ -149,7 +219,7 @@ export function ScannerView() {
   const isBusy = isVisionAnalyzing || isAnalyzingUpload || isLookingUpBarcode;
 
   return (
-    <div className="relative flex min-h-screen flex-col justify-between bg-[#090A0F] text-white">
+    <div className="relative flex min-h-screen flex-col justify-between bg-[#080A0F] text-white">
       {/* Top Floating Bar */}
       <header className="relative z-20 mx-auto flex w-full max-w-md items-center justify-between px-5 pt-5">
         <button
@@ -158,19 +228,21 @@ export function ScannerView() {
             stopCamera();
             router.push("/");
           }}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-[#12151E]/85 text-slate-200 backdrop-blur-xl transition hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-[#11151F]/85 text-slate-200 backdrop-blur-xl transition hover:text-white"
           aria-label="Torna al Diario"
         >
           <ArrowLeft size={20} />
         </button>
 
-        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-[#12151E]/85 px-3.5 py-1.5 text-xs font-bold backdrop-blur-xl">
+        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-[#11151F]/85 px-3.5 py-1.5 text-xs font-bold backdrop-blur-xl">
           <span
             className={`h-2 w-2 rounded-full ${
               isStreaming ? "animate-pulse bg-emerald-400" : "bg-amber-400"
             }`}
           />
-          <span>{mode === "barcode" ? "Scanner Barcode EAN" : "AI Food Vision"}</span>
+          <span>
+            {mode === "barcode" ? "Scanner Barcode Live" : "BoTrack AI Vision"}
+          </span>
         </div>
 
         <button
@@ -179,7 +251,7 @@ export function ScannerView() {
           className={`flex h-10 w-10 items-center justify-center rounded-2xl border backdrop-blur-xl transition ${
             showManualInput
               ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
-              : "border-white/10 bg-[#12151E]/85 text-slate-300 hover:text-white"
+              : "border-white/10 bg-[#11151F]/85 text-slate-300 hover:text-white"
           }`}
           title="Digita codice a barre"
         >
@@ -189,7 +261,7 @@ export function ScannerView() {
 
       {/* Area Centrale Fotocamera + Mirino Adattivo */}
       <div className="relative mx-auto my-4 flex w-full max-w-md flex-1 flex-col items-center justify-center px-5">
-        <div className="relative flex h-[420px] w-full items-center justify-center overflow-hidden rounded-[28px] border border-white/10 bg-[#12151E] shadow-2xl">
+        <div className="relative flex h-[440px] w-full items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-[#11151F] shadow-2xl">
           <video
             ref={videoRef}
             autoPlay
@@ -198,16 +270,14 @@ export function ScannerView() {
             className="h-full w-full object-cover"
           />
 
-          {/* Overlay Scuro Perimetrale */}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
 
-          {/* Mirino Adattivo (Rettangolare per Barcode, Quadrato Ampio per AI Vision) */}
+          {/* Mirino Adattivo */}
           <div
             className={`pointer-events-none relative transition-all duration-300 ${
               mode === "barcode" ? "h-44 w-72" : "h-64 w-64"
             }`}
           >
-            {/* 4 Angoli Luminosi */}
             <div
               className={`absolute left-0 top-0 h-7 w-7 rounded-tl-2xl border-l-4 border-t-4 ${
                 mode === "barcode" ? "border-emerald-400" : "border-purple-400"
@@ -229,7 +299,6 @@ export function ScannerView() {
               }`}
             />
 
-            {/* Linea Laser Animata */}
             <div
               className={`animate-scan-laser absolute left-3 right-3 h-0.5 rounded-full shadow-[0_0_12px_currentColor] ${
                 mode === "barcode"
@@ -239,9 +308,8 @@ export function ScannerView() {
             />
           </div>
 
-          {/* Overlay X-Ray Shimmer durante l'analisi */}
           {isBusy && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#090A0F]/80 backdrop-blur-md">
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#080A0F]/80 backdrop-blur-md">
               <Loader2
                 size={36}
                 className={`animate-spin ${
@@ -258,12 +326,12 @@ export function ScannerView() {
           )}
 
           {cameraError && !isStreaming && (
-            <div className="absolute inset-x-6 bottom-6 rounded-2xl border border-amber-500/30 bg-[#12151E]/95 p-3.5 text-center backdrop-blur-md">
+            <div className="absolute inset-x-6 bottom-6 rounded-2xl border border-amber-500/30 bg-[#11151F]/95 p-3.5 text-center backdrop-blur-md">
               <p className="text-xs font-semibold text-amber-300">
                 Fotocamera non attiva su questo dispositivo
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
-                Usa il caricamento foto dalla Galleria o digita il codice a barre con l&apos;icona tastiera in alto.
+                Carica una foto dalla Galleria o digita il codice EAN qui sotto.
               </p>
             </div>
           )}
@@ -271,13 +339,13 @@ export function ScannerView() {
 
         {/* Cassetto A Scomparsa per Codice a Barre Manuale */}
         {showManualInput && (
-          <div className="mt-3 flex w-full gap-2 rounded-2xl border border-white/10 bg-[#12151E] p-2.5 shadow-xl">
+          <div className="mt-3 flex w-full gap-2 rounded-2xl border border-white/10 bg-[#11151F] p-2.5 shadow-xl">
             <input
               type="text"
               value={manualBarcode}
               onChange={(e) => setManualBarcode(e.target.value)}
               placeholder="Inserisci codice EAN (es. 8001120015018)..."
-              className="h-10 flex-1 rounded-xl border border-white/[0.08] bg-[#161A26] px-3 text-xs font-medium text-white outline-none focus:border-emerald-500 tabular-nums"
+              className="h-10 flex-1 rounded-xl border border-white/[0.08] bg-[#181D2B] px-3 text-xs font-medium text-white outline-none focus:border-emerald-500 tabular-nums"
             />
             <button
               type="button"
@@ -292,9 +360,8 @@ export function ScannerView() {
       </div>
 
       {/* Bottom Controls Sheet */}
-      <div className="relative z-20 mx-auto w-full max-w-md rounded-t-[28px] border-t border-white/10 bg-[#12151E]/95 px-5 pb-8 pt-4 backdrop-blur-xl">
-        {/* Segmented Mode Switcher */}
-        <div className="mb-4 flex gap-1.5 rounded-2xl border border-white/[0.06] bg-[#161A26] p-1">
+      <div className="relative z-20 mx-auto w-full max-w-md rounded-t-3xl border-t border-white/10 bg-[#11151F]/95 px-5 pb-8 pt-4 backdrop-blur-xl">
+        <div className="mb-4 flex gap-1.5 rounded-2xl border border-white/[0.06] bg-[#181D2B] p-1">
           <button
             type="button"
             onClick={() => {
@@ -327,28 +394,17 @@ export function ScannerView() {
         </div>
 
         {mode === "barcode" ? (
-          <div className="flex flex-col gap-2.5">
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => setShowManualInput(true)}
-                className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 text-sm font-extrabold text-slate-950 shadow-[0_8px_20px_rgba(16,185,129,0.3)] transition hover:brightness-110"
-              >
-                <Keyboard size={18} /> Digita Codice EAN
-              </button>
-
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => void handleBarcodeLookup("1234567890128")}
-                className="flex h-12 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-[#1A1E2B] px-4 text-xs font-bold text-slate-300 transition hover:text-white"
-                title="Test rapido con codice demo"
-              >
-                <Zap size={15} className="text-amber-400" /> Test
-              </button>
-            </div>
-          </div>
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={() => setShowManualInput((prev) => !prev)}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 text-sm font-extrabold text-slate-950 shadow-[0_8px_20px_rgba(16,185,129,0.3)] transition hover:brightness-110"
+          >
+            <Keyboard size={18} />{" "}
+            {showManualInput
+              ? "Nascondi Tastiera EAN"
+              : "Inquadra il Barcode o Digita EAN"}
+          </button>
         ) : (
           <div className="flex gap-2.5">
             <input
@@ -362,7 +418,7 @@ export function ScannerView() {
               type="button"
               disabled={isBusy}
               onClick={() => fileInputRef.current?.click()}
-              className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#1A1E2B] px-4 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#181D2B] px-4 text-xs font-bold text-slate-200 transition hover:bg-white/10"
             >
               <ImagePlus size={18} className="text-purple-400" /> Galleria
             </button>
@@ -379,7 +435,6 @@ export function ScannerView() {
         )}
       </div>
 
-      {/* Modale Conferma Grammi quando l'alimento viene trovato */}
       {detectedFood && (
         <ServingSizeSelectorModal
           foodItem={detectedFood}
@@ -389,7 +444,6 @@ export function ScannerView() {
         />
       )}
 
-      {/* Modale Creazione Rapida se il Barcode non esiste nei DB */}
       {notFoundBarcode && (
         <CustomFoodCreatorModal
           initialBarcode={notFoundBarcode}
