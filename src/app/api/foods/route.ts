@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { FoodItem } from "@/lib/food/schemas";
 import { ITALIAN_STAPLE_FOODS } from "@/lib/food/italianBaseFoods";
 
+export const dynamic = "force-static";
+
 const globalForFoods = globalThis as unknown as {
   __botrackCustomFoods?: FoodItem[];
 };
