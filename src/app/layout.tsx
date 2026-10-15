@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import SWRegister from "./sw-register";
 
 export const metadata: Metadata = {
   title: "MacroTrack — Calorie & Macro Tracker",
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="it" className="dark">
       <body className="bg-[#090a0f] text-zinc-100 antialiased select-none overscroll-none">
+ <SWRegister />
         {children}
       </body>
     </html>
